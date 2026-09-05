@@ -167,12 +167,12 @@ async function initialize() {
       const value = Number(input.value);
       const minimum = Number(slider.min);
       const maximum = Number(slider.max);
-      const step = Number(slider.step);
-      const valid = isCompleteNumber(input.value) && value >= minimum && value <= maximum && isStepAligned(value, minimum, step);
+      const valid = isCompleteNumber(input.value) && value >= minimum && value <= maximum;
       input.setAttribute('aria-invalid', String(!valid));
       if (!valid) return;
       options[key] = value;
       slider.value = input.value;
+      if (key === 'width' || key === 'height') syncCanvasSize();
       void writeOptionsToUrl(options);
       if (!document.querySelector('#animate').checked && !recording) render(performance.now());
     });
