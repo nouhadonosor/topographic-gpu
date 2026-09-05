@@ -23,6 +23,9 @@ async function initialize() {
   let recording = false;
   const panOffset = { x: options.panX, y: options.panY };
   let dragStart = null;
+  let activePanInput = null;
+  let pinchDistance = null;
+  let pinchMidpoint = null;
 
   const syncCanvasSize = () => {
     canvas.width = options.width;
@@ -89,6 +92,19 @@ async function initialize() {
     });
   });
 
+  const zoomAtPoint = (clientX, clientY, nextScale) => {
+    const noiseScale = document.querySelector('[data-option="noiseScale"]');
+    const previousValue = Number(noiseScale.value);
+    const bounds = canvas.getBoundingClientRect();
+    const cursorX = (clientX - bounds.left) * canvas.width / bounds.width;
+    const cursorY = canvas.height - (clientY - bounds.top) * canvas.height / bounds.height;
+    const scaleRatio = nextScale / previousValue;
+    panOffset.x += (cursorX - options.padding - panOffset.x) * (1 - scaleRatio);
+    panOffset.y += (cursorY - options.padding - panOffset.y) * (1 - scaleRatio);
+    noiseScale.value = nextScale;
+    noiseScale.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
   canvas.addEventListener('wheel', event => {
     event.preventDefault();
     const noiseScale = document.querySelector('[data-option="noiseScale"]');
@@ -99,43 +115,136 @@ async function initialize() {
     const nextValue = previousValue * Math.exp(-event.deltaY * 0.001);
     const steppedValue = Math.round((nextValue - minimum) / step) * step + minimum;
     const nextScale = Math.min(maximum, Math.max(minimum, steppedValue));
-    const bounds = canvas.getBoundingClientRect();
-    const cursorX = (event.clientX - bounds.left) * canvas.width / bounds.width;
-    const cursorY = canvas.height - (event.clientY - bounds.top) * canvas.height / bounds.height;
-    const scaleRatio = nextScale / previousValue;
-    panOffset.x += (cursorX - options.padding - panOffset.x) * (1 - scaleRatio);
-    panOffset.y += (cursorY - options.padding - panOffset.y) * (1 - scaleRatio);
+    zoomAtPoint(event.clientX, event.clientY, nextScale);
     syncPanOptions();
-    noiseScale.value = nextScale;
-    noiseScale.dispatchEvent(new Event('input', { bubbles: true }));
   }, { passive: false });
+
+  const beginPanning = (clientX, clientY, inputType) => {
+    if (activePanInput && activePanInput !== inputType) return;
+    activePanInput = inputType;
+    dragStart = { x: clientX, y: clientY };
+    canvas.classList.add('is-panning');
+  };
+
+  const movePanning = (clientX, clientY) => {
+    if (!dragStart) return;
+    const bounds = canvas.getBoundingClientRect();
+    panOffset.x += (clientX - dragStart.x) * canvas.width / bounds.width;
+    panOffset.y += (clientY - dragStart.y) * canvas.height / bounds.height;
+    dragStart = { x: clientX, y: clientY };
+    if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+  };
+
+  const finishPanning = (inputType, pointerId) => {
+    if (activePanInput !== inputType) return;
+    dragStart = null;
+    activePanInput = null;
+    pinchDistance = null;
+    pinchMidpoint = null;
+    canvas.classList.remove('is-panning');
+    if (pointerId !== undefined && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+    syncPanOptions();
+    void writeOptionsToUrl(options);
+  };
 
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     canvas.setPointerCapture(event.pointerId);
-    dragStart = { x: event.clientX, y: event.clientY };
-    canvas.classList.add('is-panning');
+    beginPanning(event.clientX, event.clientY, 'pointer');
   });
 
   canvas.addEventListener('pointermove', event => {
-    if (!dragStart) return;
-    const bounds = canvas.getBoundingClientRect();
-    panOffset.x += (event.clientX - dragStart.x) * canvas.width / bounds.width;
-    panOffset.y += (event.clientY - dragStart.y) * canvas.height / bounds.height;
-    dragStart = { x: event.clientX, y: event.clientY };
-    if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+    if (activePanInput !== 'pointer') return;
+    movePanning(event.clientX, event.clientY);
   });
 
   const stopPanning = event => {
-    if (!dragStart) return;
-    dragStart = null;
-    canvas.classList.remove('is-panning');
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    syncPanOptions();
-    void writeOptionsToUrl(options);
+    finishPanning('pointer', event.pointerId);
   };
   canvas.addEventListener('pointerup', stopPanning);
   canvas.addEventListener('pointercancel', stopPanning);
+
+  const getTouchDistance = touches => {
+    const x = touches[1].clientX - touches[0].clientX;
+    const y = touches[1].clientY - touches[0].clientY;
+    return Math.hypot(x, y);
+  };
+
+  const getTouchMidpoint = touches => ({
+    x: (touches[0].clientX + touches[1].clientX) * 0.5,
+    y: (touches[0].clientY + touches[1].clientY) * 0.5
+  });
+
+  const beginPinching = touches => {
+    if (activePanInput && activePanInput !== 'touch') return;
+    activePanInput = 'touch';
+    dragStart = null;
+    pinchDistance = getTouchDistance(touches);
+    pinchMidpoint = getTouchMidpoint(touches);
+    canvas.classList.remove('is-panning');
+  };
+
+  const movePinching = touches => {
+    if (!pinchDistance || !pinchMidpoint) return;
+    const nextDistance = getTouchDistance(touches);
+    const nextMidpoint = getTouchMidpoint(touches);
+    const noiseScale = document.querySelector('[data-option="noiseScale"]');
+    const minimum = Number(noiseScale.min);
+    const maximum = Number(noiseScale.max);
+    const nextScale = Math.min(maximum, Math.max(minimum, Number(noiseScale.value) * nextDistance / pinchDistance));
+    const bounds = canvas.getBoundingClientRect();
+    panOffset.x += (nextMidpoint.x - pinchMidpoint.x) * canvas.width / bounds.width;
+    panOffset.y += (nextMidpoint.y - pinchMidpoint.y) * canvas.height / bounds.height;
+    zoomAtPoint(nextMidpoint.x, nextMidpoint.y, nextScale);
+    pinchDistance = nextDistance;
+    pinchMidpoint = nextMidpoint;
+    syncPanOptions();
+    void writeOptionsToUrl(options);
+  };
+
+  canvas.addEventListener('touchstart', event => {
+    if (event.touches.length === 2) {
+      event.preventDefault();
+      beginPinching(event.touches);
+      return;
+    }
+    if (event.touches.length !== 1) return;
+    event.preventDefault();
+    const touch = event.touches[0];
+    beginPanning(touch.clientX, touch.clientY, 'touch');
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', event => {
+    if (activePanInput !== 'touch') return;
+    event.preventDefault();
+    if (event.touches.length === 2) {
+      if (!pinchDistance) beginPinching(event.touches);
+      movePinching(event.touches);
+      return;
+    }
+    if (event.touches.length !== 1) {
+      finishPanning('touch');
+      return;
+    }
+    const touch = event.touches[0];
+    movePanning(touch.clientX, touch.clientY);
+  }, { passive: false });
+
+  const stopTouchPanning = event => {
+    if (activePanInput !== 'touch') return;
+    event.preventDefault();
+    if (event.type === 'touchend' && event.touches.length === 1) {
+      pinchDistance = null;
+      pinchMidpoint = null;
+      const touch = event.touches[0];
+      dragStart = { x: touch.clientX, y: touch.clientY };
+      canvas.classList.add('is-panning');
+      return;
+    }
+    finishPanning('touch');
+  };
+  canvas.addEventListener('touchend', stopTouchPanning, { passive: false });
+  canvas.addEventListener('touchcancel', stopTouchPanning, { passive: false });
 
   resolutionPreset.addEventListener('change', () => {
     const dimensions = resolutionPresets[resolutionPreset.value];
