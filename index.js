@@ -148,7 +148,7 @@ async function initialize() {
   };
 
   canvas.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || event.pointerType === 'touch') return;
     canvas.setPointerCapture(event.pointerId);
     beginPanning(event.clientX, event.clientY, 'pointer');
   });
