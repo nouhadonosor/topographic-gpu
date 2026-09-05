@@ -1,129 +1,264 @@
-import * as tome from 'chromotome';
-import SimplexNoise from 'simplex-noise';
-import { draw_line, draw_poly, draw_grid } from './display';
+async function initialize() {
+  const canvas = document.querySelector('#preview');
+  const error = document.querySelector('#error');
+  await initializeTheme();
+  let renderer;
+  try {
+    renderer = new WebGLTopographicRenderer(canvas);
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+    return;
+  }
 
-let sketch = function(p) {
-  let THE_SEED;
-  let simplex;
-  let noise_grid;
+  const options = await getOptionsFromUrl();
+  const recordingStatus = document.querySelector('#recording-status');
+  const resolutionPreset = document.querySelector('#resolution-preset');
+  const animate = document.querySelector('#animate');
+  const duration = document.querySelector('#duration');
+  const closestResolutionPreset = getClosestResolutionPreset(options.width, options.height);
+  let applyingResolutionPreset = false;
+  let animationFrame = 0;
+  let startedAt = performance.now();
+  let recording = false;
+  const panOffset = { x: options.panX, y: options.panY };
+  let dragStart = null;
 
-  const palette = tome.get('tsu_akasaka');
-
-  const grid_dim = 800;
-  const padding = 80;
-  const canvas_dim = grid_dim + 2 * padding;
-  const cell_dim = 2;
-  const n = grid_dim / cell_dim;
-
-  const noise_dim = 0.0025;
-  const persistence = 0.45;
-
-  p.setup = function() {
-    p.createCanvas(canvas_dim, canvas_dim);
-    THE_SEED = p.floor(p.random(9999999));
-    simplex = new SimplexNoise(THE_SEED);
-    p.randomSeed(THE_SEED);
-
-    noise_grid = build_noise_grid();
-
-    p.background(palette.background);
-    p.translate(padding, padding);
-
-    draw_grid(p, grid_dim, 12);
-    process_grid(0.3, 10, 0.7 / 10, ['#d4a710']);
-    process_grid(-1, 120, 1.3 / 120, []);
+  const syncCanvasSize = () => {
+    canvas.width = options.width;
+    canvas.height = options.height;
   };
 
-  function process_grid(init, steps, delta, fill_palette) {
-    const thresholds = build_threshold_list(init, steps, delta, fill_palette);
-    const filled = fill_palette.length !== 0;
-
-    p.push();
-    for (let y = 0; y < n; y++) {
-      p.push();
-      for (let x = 0; x < n; x++) {
-        process_cell(x, y, filled, thresholds, delta);
-        p.translate(cell_dim, 0);
-      }
-      p.pop();
-      p.translate(0, cell_dim);
-    }
-    p.pop();
-  }
-
-  function process_cell(x, y, filled, thresholds, delta) {
-    const v1 = get_noise(x, y);
-    const v2 = get_noise(x + 1, y);
-    const v3 = get_noise(x + 1, y + 1);
-    const v4 = get_noise(x, y + 1);
-
-    // Some optimization
-    const min = p.min([v1, v2, v3, v4]);
-    const max = p.max([v1, v2, v3, v4]);
-    const relevant_thresholds = thresholds.filter(
-      t => t.val >= min - delta && t.val <= max
-    );
-
-    for (const t of relevant_thresholds) {
-      const b1 = v1 > t.val ? 8 : 0;
-      const b2 = v2 > t.val ? 4 : 0;
-      const b3 = v3 > t.val ? 2 : 0;
-      const b4 = v4 > t.val ? 1 : 0;
-
-      const id = b1 + b2 + b3 + b4;
-
-      if (filled) {
-        p.fill(t.col);
-        draw_poly(p, id, v1, v2, v3, v4, t.val, cell_dim);
-      } else {
-        p.stroke(palette.stroke ? palette.stroke : '#111');
-        draw_line(p, id, v1, v2, v3, v4, t.val, cell_dim);
-      }
-    }
-  }
-
-  function get_noise(x, y) {
-    return noise_grid[y][x];
-  }
-
-  function build_noise_grid() {
-    let grid = [];
-    for (let y = 0; y < n + 1; y++) {
-      let row = [];
-      for (let x = 0; x < n + 1; x++) {
-        row.push(sum_octave(16, x, y));
-      }
-      grid.push(row);
-    }
-    return grid;
-  }
-
-  function build_threshold_list(init, steps, delta, colors) {
-    let thresholds = [];
-    for (let t = 0; t <= steps; t++) {
-      let col = colors.length === 0 ? '#fff' : colors[p.floor(p.random(colors.length))];
-      thresholds.push({ val: init + t * delta, col: col });
-    }
-    return thresholds;
-  }
-
-  function sum_octave(num_iterations, x, y) {
-    let noise = 0;
-    let maxAmp = 0;
-    let amp = 1;
-    let freq = noise_dim;
-
-    for (let i = 0; i < num_iterations; i++) {
-      noise += simplex.noise2D(14.3 + x * freq, 5.71 + y * freq) * amp;
-      maxAmp += amp;
-      amp *= persistence;
-      freq *= 2;
-    }
-    return noise / maxAmp;
-  }
-
-  p.keyPressed = function() {
-    if (p.keyCode === 80) p.saveCanvas('sketch_' + THE_SEED, 'jpeg');
+  const render = now => {
+    const started = performance.now();
+    const isAnimating = document.querySelector('#animate').checked || recording;
+    const elapsedSeconds = isAnimating ? (now - startedAt) / 1000 : 0;
+    renderer.render(options, elapsedSeconds, panOffset, options.evolveLoopDuration);
+    document.querySelector('#render-time').textContent = `${(performance.now() - started).toFixed(1)} ms`;
+    if (document.querySelector('#animate').checked || recording) animationFrame = requestAnimationFrame(render);
   };
-};
-new p5(sketch);
+
+  const syncPanOptions = () => {
+    options.panX = panOffset.x;
+    options.panY = panOffset.y;
+  };
+
+  animate.checked = options.animate;
+  duration.value = options.duration;
+
+  initializeGradientControls({
+    options,
+    onChange: () => {
+      void writeOptionsToUrl(options);
+      if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+    }
+  });
+
+  const animationMode = document.querySelector('#animation-mode');
+  const evolveLoopField = document.querySelector('#evolve-loop-field');
+  const updateEvolveLoopVisibility = () => {
+    evolveLoopField.hidden = animationMode.value !== 'evolve';
+  };
+  animationMode.value = options.animationMode;
+  updateEvolveLoopVisibility();
+  animationMode.addEventListener('change', () => {
+    options.animationMode = animationMode.value;
+    void writeOptionsToUrl(options);
+    updateEvolveLoopVisibility();
+    if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+  });
+
+  document.querySelectorAll('[data-option]').forEach(input => {
+    const key = input.dataset.option;
+    input.value = options[key];
+    const valueInput = document.querySelector(`[data-value="${key}"]`);
+    const colorInput = document.querySelector(`[data-color-value="${key}"]`);
+    if (valueInput) valueInput.value = options[key];
+    if (colorInput) colorInput.value = options[key];
+    input.addEventListener('input', () => {
+      options[key] = input.type === 'color' ? input.value : Number(input.value);
+      if (valueInput) {
+        valueInput.value = input.value;
+        valueInput.setAttribute('aria-invalid', 'false');
+      }
+      if (colorInput) colorInput.value = input.value;
+      if ((key === 'width' || key === 'height') && !applyingResolutionPreset) resolutionPreset.value = 'custom';
+      if (key === 'width' || key === 'height') syncCanvasSize();
+      void writeOptionsToUrl(options);
+      if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+    });
+  });
+
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    const noiseScale = document.querySelector('[data-option="noiseScale"]');
+    const minimum = Number(noiseScale.min);
+    const maximum = Number(noiseScale.max);
+    const step = Number(noiseScale.step);
+    const previousValue = Number(noiseScale.value);
+    const nextValue = previousValue * Math.exp(-event.deltaY * 0.001);
+    const steppedValue = Math.round((nextValue - minimum) / step) * step + minimum;
+    const nextScale = Math.min(maximum, Math.max(minimum, steppedValue));
+    const bounds = canvas.getBoundingClientRect();
+    const cursorX = (event.clientX - bounds.left) * canvas.width / bounds.width;
+    const cursorY = canvas.height - (event.clientY - bounds.top) * canvas.height / bounds.height;
+    const scaleRatio = nextScale / previousValue;
+    panOffset.x += (cursorX - options.padding - panOffset.x) * (1 - scaleRatio);
+    panOffset.y += (cursorY - options.padding - panOffset.y) * (1 - scaleRatio);
+    syncPanOptions();
+    noiseScale.value = nextScale;
+    noiseScale.dispatchEvent(new Event('input', { bubbles: true }));
+  }, { passive: false });
+
+  canvas.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    canvas.setPointerCapture(event.pointerId);
+    dragStart = { x: event.clientX, y: event.clientY };
+    canvas.classList.add('is-panning');
+  });
+
+  canvas.addEventListener('pointermove', event => {
+    if (!dragStart) return;
+    const bounds = canvas.getBoundingClientRect();
+    panOffset.x += (event.clientX - dragStart.x) * canvas.width / bounds.width;
+    panOffset.y += (event.clientY - dragStart.y) * canvas.height / bounds.height;
+    dragStart = { x: event.clientX, y: event.clientY };
+    if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+  });
+
+  const stopPanning = event => {
+    if (!dragStart) return;
+    dragStart = null;
+    canvas.classList.remove('is-panning');
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    syncPanOptions();
+    void writeOptionsToUrl(options);
+  };
+  canvas.addEventListener('pointerup', stopPanning);
+  canvas.addEventListener('pointercancel', stopPanning);
+
+  resolutionPreset.addEventListener('change', () => {
+    const dimensions = resolutionPresets[resolutionPreset.value];
+    if (!dimensions) return;
+    applyingResolutionPreset = true;
+    ['width', 'height'].forEach((key, index) => {
+      const slider = document.querySelector(`[data-option="${key}"]`);
+      slider.value = dimensions[index];
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    applyingResolutionPreset = false;
+  });
+
+  resolutionPreset.value = closestResolutionPreset;
+  if (!new URLSearchParams(window.location.search).has('settings')) resolutionPreset.dispatchEvent(new Event('change'));
+
+  const copyLink = document.querySelector('#copy-link');
+  copyLink.addEventListener('click', async () => {
+    await writeOptionsToUrl(options);
+    await navigator.clipboard.writeText(window.location.href);
+    copyLink.textContent = 'Link copied';
+    setTimeout(() => { copyLink.textContent = 'Copy link'; }, 1400);
+  });
+
+  document.querySelectorAll('[data-value]').forEach(input => {
+    const key = input.dataset.value;
+    const slider = document.querySelector(`[data-option="${key}"]`);
+    input.addEventListener('input', () => {
+      const value = Number(input.value);
+      const minimum = Number(slider.min);
+      const maximum = Number(slider.max);
+      const step = Number(slider.step);
+      const valid = isCompleteNumber(input.value) && value >= minimum && value <= maximum && isStepAligned(value, minimum, step);
+      input.setAttribute('aria-invalid', String(!valid));
+      if (!valid) return;
+      options[key] = value;
+      slider.value = input.value;
+      void writeOptionsToUrl(options);
+      if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+    });
+    input.addEventListener('blur', () => {
+      if (input.getAttribute('aria-invalid') !== 'true') return;
+      input.value = options[key];
+      input.setAttribute('aria-invalid', 'false');
+    });
+  });
+
+  document.querySelectorAll('[data-color-value]').forEach(input => {
+    const key = input.dataset.colorValue;
+    const swatch = document.querySelector(`[data-option="${key}"]`);
+    input.addEventListener('input', () => {
+      const value = normalizeHex(input.value);
+      input.setAttribute('aria-invalid', String(!value));
+      if (!value) return;
+      options[key] = value;
+      swatch.value = value;
+      void writeOptionsToUrl(options);
+      if (!document.querySelector('#animate').checked && !recording) render(performance.now());
+    });
+    input.addEventListener('blur', () => {
+      if (input.getAttribute('aria-invalid') !== 'true') return;
+      input.value = options[key];
+      input.setAttribute('aria-invalid', 'false');
+    });
+  });
+
+  animate.addEventListener('change', event => {
+    options.animate = event.target.checked;
+    void writeOptionsToUrl(options);
+    cancelAnimationFrame(animationFrame);
+    startedAt = performance.now();
+    render(startedAt);
+  });
+
+  duration.addEventListener('input', () => {
+    const value = Number(duration.value);
+    if (!Number.isFinite(value) || value < 1 || value > 30) return;
+    options.duration = value;
+    void writeOptionsToUrl(options);
+  });
+
+  document.querySelector('#save-image').addEventListener('click', () => {
+    render(performance.now());
+    saveCanvasImage(canvas);
+  });
+
+  document.querySelector('#save-video').addEventListener('click', () => {
+    if (recording) return;
+    const button = document.querySelector('#save-video');
+    const duration = Math.min(30, Math.max(1, Number(document.querySelector('#duration').value)));
+    const recorder = recordCanvasVideo({
+      canvas,
+      duration,
+      bitrate: options.videoBitrate,
+      onProgress: progress => {
+        recordingStatus.querySelector('output').value = `Recording ${progress}%`;
+      },
+      onStart: () => {
+        recording = true;
+        button.disabled = true;
+        button.textContent = 'Recording...';
+        recordingStatus.hidden = false;
+        startedAt = performance.now();
+        cancelAnimationFrame(animationFrame);
+        animationFrame = requestAnimationFrame(render);
+      },
+      onBeforeStop: () => render(startedAt + duration * 1000),
+      onStop: () => {
+        recording = false;
+        button.disabled = false;
+        button.textContent = 'Record video';
+        recordingStatus.hidden = true;
+        if (!document.querySelector('#animate').checked) cancelAnimationFrame(animationFrame);
+      },
+      onError: message => {
+        error.textContent = message;
+        error.hidden = false;
+      }
+    });
+    if (!recorder) return;
+  });
+
+  render(performance.now());
+}
+
+window.addEventListener('DOMContentLoaded', initialize);

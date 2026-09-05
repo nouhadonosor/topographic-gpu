@@ -1,13 +1,114 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>Sketch</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/p5.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.3/addons/p5.dom.js"></script>
-    <script src="dist/index-interactive.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#ecebe4">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='30' height='30' x='1' y='1' fill='%23fffef8' stroke='%23171814' stroke-width='2'/%3E%3Cg fill='none' stroke='%23171814' stroke-width='2'%3E%3Ccircle cx='22' cy='10' r='5'/%3E%3Ccircle cx='22' cy='10' r='11'/%3E%3Ccircle cx='22' cy='10' r='17'/%3E%3C/g%3E%3C/svg%3E">
+    <title>Topographic</title>
+    <link rel="stylesheet" href="webgl.css">
+    <script defer src="scripts/config.js"></script>
+    <script defer src="scripts/utils.js"></script>
+    <script defer src="scripts/shaders.js"></script>
+    <script defer src="scripts/renderer.js"></script>
+    <script defer src="scripts/gradient.js"></script>
+    <script defer src="scripts/theme.js"></script>
+    <script defer src="scripts/png.js"></script>
+    <script defer src="scripts/video.js"></script>
+    <script defer src="index.js"></script>
 </head>
-<body style="text-align:center; margin-top:50px;"></body>
+<body>
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <div>
+                <h1>Topographic</h1>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button id="theme-toggle" class="button secondary icon-button" type="button" aria-label="Switch to dark theme" title="Switch to dark theme" aria-pressed="false"><span id="theme-icon" aria-hidden="true">&#9790;</span></button>
+            <button id="copy-link" class="button secondary" type="button">Copy link</button>
+            <button id="save-image" class="button secondary" type="button">Save PNG</button>
+            <button id="save-video" class="button primary" type="button">Record video</button>
+        </div>
+    </header>
+
+    <main class="workspace">
+        <aside class="controls" aria-label="Render controls">
+            <section>
+                <div class="section-heading">
+                    <h2>Output</h2>
+                    <output id="render-time">Ready</output>
+                </div>
+                <div class="control-list">
+                    <label class="field"><span>Format preset</span><select id="resolution-preset">
+                        <option value="custom">Custom</option>
+                        <option value="hd">HD · 1280 x 720</option>
+                        <option value="full-hd">Full HD · 1920 x 1080</option>
+                        <option value="qhd">QHD · 2560 x 1440</option>
+                        <option value="4k">4K UHD · 3840 x 2160</option>
+                        <option value="ultrawide">Ultrawide · 2560 x 1080</option>
+                        <option value="ultrawide-qhd">Ultrawide QHD · 3440 x 1440</option>
+                    </select></label>
+                    <label class="range-field"><span><span>Width</span><input class="value-input" data-value="width" type="text" inputmode="numeric"></span><input data-option="width" type="range" min="320" max="3840" step="20"></label>
+                    <label class="range-field"><span><span>Height</span><input class="value-input" data-value="height" type="text" inputmode="numeric"></span><input data-option="height" type="range" min="240" max="2160" step="20"></label>
+                    <label class="range-field"><span><span>Video bitrate</span><span><input class="value-input" data-value="videoBitrate" type="text" inputmode="numeric"> Mbps</span></span><input data-option="videoBitrate" type="range" min="1" max="100" step="1"></label>
+                </div>
+                <label class="range-field"><span><span>Padding</span><input class="value-input" data-value="padding" type="text" inputmode="numeric"></span><input data-option="padding" type="range" min="0" max="160" step="1"></label>
+            </section>
+
+            <section>
+                <h2>Shape</h2>
+                <div class="control-list">
+                    <label class="range-field"><span><span>Cell size</span><input class="value-input" data-value="cellSize" type="text" inputmode="decimal"></span><input data-option="cellSize" type="range" min="1" max="12" step="0.5"></label>
+                    <label class="range-field"><span><span>Noise scale</span><input class="value-input" data-value="noiseScale" type="text" inputmode="numeric"></span><input data-option="noiseScale" type="range" min="40" max="700" step="5"></label>
+                    <label class="range-field"><span><span>Persistence</span><input class="value-input" data-value="persistence" type="text" inputmode="decimal"></span><input data-option="persistence" type="range" min="0.1" max="0.95" step="0.01"></label>
+                    <label class="range-field"><span><span>Octaves</span><input class="value-input" data-value="octaves" type="text" inputmode="numeric"></span><input data-option="octaves" type="range" min="1" max="20" step="1"></label>
+                    <label class="range-field"><span><span>Contrast</span><input class="value-input" data-value="sigmoidIntensity" type="text" inputmode="decimal"></span><input data-option="sigmoidIntensity" type="range" min="0.5" max="20" step="0.5"></label>
+                    <label class="range-field"><span><span>Contour density</span><input class="value-input" data-value="contourDensity" type="text" inputmode="numeric"></span><input data-option="contourDensity" type="range" min="1" max="40" step="1"></label>
+                    <label class="range-field"><span><span>Water level</span><input class="value-input" data-value="thresholdRange" type="text" inputmode="decimal"></span><input data-option="thresholdRange" type="range" min="0.05" max="1" step="0.01"></label>
+                    <label class="range-field"><span><span>Line width</span><input class="value-input" data-value="lineWidth" type="text" inputmode="decimal"></span><input data-option="lineWidth" type="range" min="0.25" max="5" step="0.25"></label>
+                    <label class="range-field"><span><span>Seed</span><input class="value-input" data-value="seed" type="text" inputmode="numeric"></span><input data-option="seed" type="range" min="0" max="100" step="1"></label>
+                </div>
+            </section>
+
+            <section>
+                <h2>Color</h2>
+                <div class="color-list">
+                    <label class="color-field"><span>Water</span><span class="color-inputs"><input data-option="background" type="color"><input data-color-value="background" type="text" maxlength="7" spellcheck="false"></span></label>
+                    <label class="color-field"><span>Land</span><span class="color-inputs"><input data-option="fill" type="color"><input data-color-value="fill" type="text" maxlength="7" spellcheck="false"></span></label>
+                    <label class="color-field"><span>Contours</span><span class="color-inputs"><input data-option="contour" type="color"><input data-color-value="contour" type="text" maxlength="7" spellcheck="false"></span></label>
+                </div>
+                <label class="toggle-row gradient-toggle"><span>Land height gradient</span><input id="gradient-enabled" type="checkbox"></label>
+                <div id="gradient-preview" class="gradient-preview" role="img" aria-label="Land height gradient preview"></div>
+                <div class="gradient-editor" id="gradient-editor" aria-label="Land height gradient stops"></div>
+                <div class="gradient-actions"><button id="add-gradient-stop" class="button secondary compact-button" type="button">Add stop</button><output id="gradient-stop-count"></output></div>
+            </section>
+
+            <section>
+                <h2>Motion</h2>
+                <label class="field animation-mode-field"><span>Animation mode</span><select id="animation-mode">
+                    <option value="evolve">Evolve terrain</option>
+                    <option value="drift">Drift terrain</option>
+                    <option value="tide">Tidal coastline</option>
+                    <option value="breathe">Breathe terrain</option>
+                    <option value="warp">Warp terrain</option>
+                    <option value="rotate">Rotate terrain</option>
+                </select></label>
+                <label class="toggle-row"><span>Animate preview</span><input id="animate" type="checkbox"></label>
+                <label class="range-field"><span><span>Animation speed</span><input class="value-input" data-value="animationSpeed" type="text" inputmode="decimal"></span><input data-option="animationSpeed" type="range" min="0" max="10" step="0.01"></label>
+                <label id="evolve-loop-field" class="range-field"><span><span>Evolve loop length</span><span><input class="value-input" data-value="evolveLoopDuration" type="text" inputmode="decimal"> s</span></span><input data-option="evolveLoopDuration" type="range" min="1" max="30" step="0.5"></label>
+                <label class="field duration"><span>Video duration</span><span><input id="duration" type="number" min="1" max="30" value="5"> s</span></label>
+            </section>
+        </aside>
+
+        <section class="viewport" aria-label="Live GPU preview">
+            <div class="canvas-stage">
+                <canvas id="preview" width="1280" height="900"></canvas>
+                <div id="recording-status" class="recording-status" hidden><span></span><output>Recording 0%</output></div>
+            </div>
+            <p id="error" class="error" role="alert" hidden></p>
+        </section>
+    </main>
+</body>
 </html>
