@@ -20,7 +20,7 @@ const renderDefaults = {
     { position: 1, color: '#d64550' }
   ],
   animationSpeed: 0.15,
-  evolveLoopDuration: 5,
+  perfectLoop: false,
   animationMode: 'evolve',
   videoBitrate: 80,
   seed: 1,
@@ -53,7 +53,7 @@ const optionRanges = {
   width: [320, 3840], height: [240, 2160], padding: [0, 160], lineWidth: [0.25, 5],
   cellSize: [1, 12], noiseScale: [40, 700], persistence: [0.1, 0.95], octaves: [1, 20],
   sigmoidIntensity: [0.5, 20], contourDensity: [1, 40], thresholdRange: [0.05, 1],
-  animationSpeed: [0, 10], evolveLoopDuration: [1, 30], videoBitrate: [1, 100], seed: [0, 100], duration: [1, 30]
+  animationSpeed: [0, 10], videoBitrate: [1, 100], seed: [0, 100], duration: [1, 30]
 };
 
 function getClosestResolutionPreset(width, height) {
@@ -96,7 +96,7 @@ async function getOptionsFromUrl() {
     if (typeof value === 'number' && Number.isFinite(value) && (!optionRanges[key] || (value >= optionRanges[key][0] && value <= optionRanges[key][1]))) options[key] = value;
     if (typeof value === 'string' && key === 'animationMode' && animationModeIds[value] !== undefined) options[key] = value;
     if (typeof value === 'string' && ['background', 'fill', 'contour'].includes(key) && /^#[0-9a-f]{6}$/i.test(value)) options[key] = value.toLowerCase();
-    if (typeof value === 'boolean' && ['gradientEnabled', 'animate'].includes(key)) options[key] = value;
+    if (typeof value === 'boolean' && ['gradientEnabled', 'perfectLoop', 'animate'].includes(key)) options[key] = value;
   });
   if (Array.isArray(parsed.gradientStops) && parsed.gradientStops.length >= 2 && parsed.gradientStops.length <= 8) {
     const stops = parsed.gradientStops.filter(stop => stop && Number.isFinite(stop.position) && stop.position >= 0 && stop.position <= 1 && typeof stop.color === 'string' && /^#[0-9a-f]{6}$/i.test(stop.color));

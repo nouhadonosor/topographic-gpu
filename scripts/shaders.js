@@ -18,7 +18,8 @@ uniform float sigmoidIntensity;
 uniform float contourDensity;
 uniform float thresholdRange;
 uniform float animationSpeed;
-uniform float evolveLoopDuration;
+uniform bool perfectLoop;
+uniform float loopDuration;
 uniform int animationMode;
 uniform float seed;
 uniform float lineWidth;
@@ -160,12 +161,17 @@ void main() {
     return;
   }
 
-  float motionTime = time * animationSpeed;
+  const float TAU = 6.28318530718;
+  float loopProgress = fract(time / max(loopDuration, 0.001));
+  float loopWave = sin(loopProgress * TAU);
+  float motionTime = perfectLoop
+    ? loopWave * loopDuration * animationSpeed / TAU
+    : time * animationSpeed;
   vec2 point = (pixel - padding - panOffset) / max(noiseScale * cellSize, 0.25);
   point = animatePoint(point, motionTime);
   float value;
   if (animationMode == 0) {
-    float loopPhase = fract(motionTime / max(evolveLoopDuration, 0.001));
+    float loopPhase = motionTime / TAU;
     value = loopedFractalNoise(point, loopPhase);
   } else {
     value = fractalNoise(point, 0.0);

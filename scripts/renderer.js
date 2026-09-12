@@ -44,7 +44,7 @@ class WebGLTopographicRenderer {
     return this.uniforms[name];
   }
 
-  render(options, elapsedSeconds, panOffset, evolveLoopDuration = options.evolveLoopDuration) {
+  render(options, elapsedSeconds, panOffset, loop = { enabled: false, duration: 1 }) {
     if (this.canvas.width !== options.width || this.canvas.height !== options.height) {
       this.canvas.width = options.width;
       this.canvas.height = options.height;
@@ -57,7 +57,8 @@ class WebGLTopographicRenderer {
       'contourDensity', 'thresholdRange', 'animationSpeed', 'seed'].forEach(name => {
       gl.uniform1f(this.uniform(name), options[name]);
     });
-    gl.uniform1f(this.uniform('evolveLoopDuration'), evolveLoopDuration);
+    gl.uniform1i(this.uniform('perfectLoop'), loop.enabled ? 1 : 0);
+    gl.uniform1f(this.uniform('loopDuration'), loop.duration);
     gl.uniform1i(this.uniform('animationMode'), animationModeIds[options.animationMode] ?? 0);
     gl.uniform2f(this.uniform('panOffset'), panOffset.x, panOffset.y);
     gl.uniform1f(this.uniform('time'), elapsedSeconds);

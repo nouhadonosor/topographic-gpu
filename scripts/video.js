@@ -1,12 +1,19 @@
 function recordCanvasVideo({ canvas, duration, bitrate, onProgress, onStart, onStop, onError, onBeforeStop }) {
   if (!window.MediaRecorder || !canvas.captureStream) {
-    onError('WebM recording is unavailable in this browser.');
+    onError('Video recording is unavailable in this browser.');
     return null;
   }
-  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  const mimeType = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ]
     .find(type => MediaRecorder.isTypeSupported(type));
   if (!mimeType) {
-    onError('This browser cannot record WebM video.');
+    onError('This browser cannot encode MP4 or WebM video.');
     return null;
   }
 
@@ -17,18 +24,19 @@ function recordCanvasVideo({ canvas, duration, bitrate, onProgress, onStart, onS
     videoBitsPerSecond: bitrate * 1000000
   });
   const chunks = [];
-  const startedAt = performance.now();
   recorder.addEventListener('dataavailable', event => {
     if (event.data.size) chunks.push(event.data);
   });
   recorder.addEventListener('stop', () => {
-    download(new Blob(chunks, { type: mimeType }), 'topographic-preview.webm');
+    const extension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+    download(new Blob(chunks, { type: mimeType }), `topographic-preview.${extension}`);
     stream.getTracks().forEach(track => track.stop());
     onStop();
   });
 
-  recorder.start();
   onStart();
+  recorder.start();
+  const startedAt = performance.now();
   const updateProgress = now => {
     const progress = Math.min(100, Math.round(((now - startedAt) / durationMilliseconds) * 100));
     onProgress(progress);

@@ -15,6 +15,7 @@ async function initialize() {
   const recordingStatus = document.querySelector('#recording-status');
   const resolutionPreset = document.querySelector('#resolution-preset');
   const animate = document.querySelector('#animate');
+  const perfectLoop = document.querySelector('#perfect-loop');
   const duration = document.querySelector('#duration');
   const closestResolutionPreset = getClosestResolutionPreset(options.width, options.height);
   let applyingResolutionPreset = false;
@@ -36,7 +37,10 @@ async function initialize() {
     const started = performance.now();
     const isAnimating = document.querySelector('#animate').checked || recording;
     const elapsedSeconds = isAnimating ? (now - startedAt) / 1000 : 0;
-    renderer.render(options, elapsedSeconds, panOffset, options.evolveLoopDuration);
+    renderer.render(options, elapsedSeconds, panOffset, {
+      enabled: recording && options.perfectLoop,
+      duration: options.duration
+    });
     document.querySelector('#render-time').textContent = `${(performance.now() - started).toFixed(1)} ms`;
     if (document.querySelector('#animate').checked || recording) animationFrame = requestAnimationFrame(render);
   };
@@ -47,6 +51,7 @@ async function initialize() {
   };
 
   animate.checked = options.animate;
+  perfectLoop.checked = options.perfectLoop;
   duration.value = options.duration;
 
   initializeGradientControls({
@@ -58,16 +63,10 @@ async function initialize() {
   });
 
   const animationMode = document.querySelector('#animation-mode');
-  const evolveLoopField = document.querySelector('#evolve-loop-field');
-  const updateEvolveLoopVisibility = () => {
-    evolveLoopField.hidden = animationMode.value !== 'evolve';
-  };
   animationMode.value = options.animationMode;
-  updateEvolveLoopVisibility();
   animationMode.addEventListener('change', () => {
     options.animationMode = animationMode.value;
     void writeOptionsToUrl(options);
-    updateEvolveLoopVisibility();
     if (!document.querySelector('#animate').checked && !recording) render(performance.now());
   });
 
@@ -319,6 +318,11 @@ async function initialize() {
     render(startedAt);
   });
 
+  perfectLoop.addEventListener('change', event => {
+    options.perfectLoop = event.target.checked;
+    void writeOptionsToUrl(options);
+  });
+
   duration.addEventListener('input', () => {
     const value = Number(duration.value);
     if (!Number.isFinite(value) || value < 1 || value > 30) return;
@@ -349,7 +353,7 @@ async function initialize() {
         recordingStatus.hidden = false;
         startedAt = performance.now();
         cancelAnimationFrame(animationFrame);
-        animationFrame = requestAnimationFrame(render);
+        render(startedAt);
       },
       onBeforeStop: () => render(startedAt + duration * 1000),
       onStop: () => {
